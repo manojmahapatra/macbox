@@ -1,83 +1,126 @@
 # macbox
 
-Persistent Linux dev environments on macOS, built on [Apple container](https://github.com/apple/container).
+Think WSL, but for macOS. Persistent Linux distros with SSH, port forwarding, and host integration — built on [Apple container](https://github.com/apple/container).
 
 Combines the best of two approaches:
-- **Image-first** : bakes static user config (UID/GID, account, sudo, shell) into a per-user image layer at create time — clean diffs, reproducible environments.
-- **Runtime injection** : injects dynamic config (SSH agent, host filesystem, env vars) at container start — no image rebuild needed when sessions change.
+- **Image-first** (à la afbjorklund): bakes static user config (UID/GID, account, sudo, shell, sshd) into a per-user image layer at create time.
+- **Runtime injection** (à la applebox/toolbox): injects dynamic config (SSH agent, filesystem mounts, port forwarding, env vars) at container start.
 
-## Usage
+## Quick Start
 
 ```bash
-# Create a distro from any container image
+# Create a distro
 macbox create ubuntu:24.04 mydev
 
-# Enter it (starts if stopped)
+# Enter it
 macbox enter mydev
 
-# List distros
-macbox list
-
-# Stop / remove
-macbox stop mydev
-macbox remove mydev
+# Or SSH in (works with VS Code Remote SSH)
+macbox enter mydev --ssh
+ssh -p 2222 $(whoami)@localhost
+code --remote ssh-remote+$(whoami)@localhost:2222 /home/$(whoami)
 ```
 
-## What happens under the hood
+## Config File
 
-### `macbox create ubuntu:24.04 mydev`
+Define distros as code with `macbox.json`:
 
-1. Generates a Dockerfile that layers your macOS user onto the base image:
-   - Creates user matching your UID/GID
-   - Installs sudo, sets NOPASSWD
-   - Installs your preferred shell (zsh/fish/bash)
-2. Builds the image via `container build`
-3. Runs the container with runtime mounts:
-   - `~/` mounted read-only (use `--home-rw` for read-write)
-   - SSH agent socket forwarded
-   - LANG, TERM, EDITOR forwarded
+```bash
+macbox init                              # Generate sample config
+macbox create --config macbox.json mydev # Create from config
+```
 
-### `macbox enter mydev`
+```json
+{
+  "cpus": 4,
+  "homeRW": false,
+  "image": "ubuntu:24.04",
+  "memory": "4g",
+  "mounts": ["~/projects:/home/user/projects:rw"],
+  "ports": ["3000:3000", "8080:8080"],
+  "provision": ["apt-get update && apt-get install -y git curl nodejs"]
+}
+```
 
-Starts the container if stopped, then `exec`s into it with a login shell.
+CLI flags override config file values.
 
-## Options
+## Commands
 
 ```
-macbox create <image> <name> [--mount path:path] [--home-rw]
-macbox enter <name>
-macbox list
-macbox stop <name>
-macbox remove <name> [--force]
+macbox create <image> <name>     Create a new distro
+  --config, -c <path>            Load from macbox.json
+  --mount, -m <host:guest[:ro]>  Extra mounts
+  --publish, -p <host:guest>     Port forwards
+  --provision <cmd>              Run command after creation
+  --cpus <n>                     CPU limit
+  --memory <size>                Memory limit (e.g. 4g)
+  --home-rw                      Mount ~ read-write
+
+macbox enter <name>              Enter a distro
+  --ssh                          Connect via SSH
+
+macbox list                      List distros
+macbox stop <name>               Stop a distro
+macbox remove <name> [--force]   Remove distro and image
+macbox init [-o path]            Generate sample config
+```
+
+## What Happens Under the Hood
+
+### Image Layer (static, built once)
+
+- User account matching your macOS UID/GID
+- sudo with NOPASSWD
+- Your preferred shell (zsh/fish/bash)
+- OpenSSH server on port 2222 with key-only auth
+
+### Runtime Config (dynamic, per session)
+
+- `~/` mounted into container (read-only by default)
+- SSH agent socket forwarded
+- Host SSH public key → `authorized_keys`
+- LANG, TERM, EDITOR forwarded
+- User-specified port forwards and mounts
+- CPU and memory limits
+
+### Provisioning (first create only)
+
+Commands run inside the container after creation — install packages, clone repos, configure tools.
+
+## Design
+
+```
+┌──────────────────────────────────────────────┐
+│              macbox create                    │
+│                                               │
+│  macbox.json ─┐                               │
+│               ▼                               │
+│  ┌──────────────┐    ┌─────────────────────┐  │
+│  │ Image Layer   │    │ Runtime Config      │  │
+│  │ (static)      │    │ (dynamic)           │  │
+│  │               │    │                     │  │
+│  │ • UID/GID     │    │ • ~/ mount          │  │
+│  │ • username    │    │ • SSH agent fwd     │  │
+│  │ • sudo        │    │ • port forwards     │  │
+│  │ • shell       │    │ • env vars          │  │
+│  │ • sshd        │    │ • authorized_keys   │  │
+│  │               │    │ • CPU/memory limits  │  │
+│  └──────┬───────┘    └────────┬────────────┘  │
+│         │                     │               │
+│         ▼                     ▼               │
+│  container build        container run         │
+│         │                     │               │
+│         └─────────┬───────────┘               │
+│                   ▼                           │
+│           persistent distro                   │
+│                   │                           │
+│                   ▼                           │
+│           provisioning scripts                │
+└──────────────────────────────────────────────┘
 ```
 
 ## Requirements
 
 - macOS 15+
-- [Apple container](https://github.com/apple/container) CLI installed
+- [Apple container](https://github.com/apple/container) CLI
 - Swift 6.2+
-
-## Design
-
-```
-┌─────────────────────────────────────────────┐
-│              macbox create                   │
-│                                              │
-│  ┌──────────────┐    ┌────────────────────┐  │
-│  │ Image Layer   │    │ Runtime Config     │  │
-│  │ (static)      │    │ (dynamic)          │  │
-│  │               │    │                    │  │
-│  │ • UID/GID     │    │ • ~/  mount        │  │
-│  │ • username    │    │ • SSH agent fwd    │  │
-│  │ • sudo        │    │ • LANG, TERM, etc  │  │
-│  │ • shell       │    │ • extra mounts     │  │
-│  └──────┬───────┘    └────────┬───────────┘  │
-│         │                     │              │
-│         ▼                     ▼              │
-│  container build        container run        │
-│         │                     │              │
-│         └─────────┬───────────┘              │
-│                   ▼                          │
-│           persistent distro                  │
-└─────────────────────────────────────────────┘
-```

@@ -8,18 +8,23 @@ enum RuntimeConfig {
         name: String,
         host: HostInfo,
         extraMounts: [String] = [],
-        portForwards: [String] = []
+        portForwards: [String] = [],
+        cpus: Int? = nil,
+        memory: String? = nil
     ) -> [String] {
         var args = [
             "container", "run",
             "--name", name,
-            "--hostname", name,  // DNS: container hostname matches distro name
+            "--hostname", name,
             "--label", "macbox",
             "-d",
             "-v", "\(host.home):\(host.home):ro",
-            // SSH port: expose sshd for VS Code Remote SSH etc.
             "-p", "\(ImageBuilder.sshPort):\(ImageBuilder.sshPort)",
         ]
+
+        // Resource limits
+        if let cpus { args += ["--cpus", "\(cpus)"] }
+        if let memory { args += ["--memory", memory] }
 
         // SSH agent forwarding
         if let sock = host.sshAuthSock {
@@ -43,15 +48,8 @@ enum RuntimeConfig {
             }
         }
 
-        // User-specified port forwards
-        for pf in portForwards {
-            args += ["-p", pf]
-        }
-
-        // Extra user-specified mounts
-        for mount in extraMounts {
-            args += ["-v", mount]
-        }
+        for pf in portForwards { args += ["-p", pf] }
+        for mount in extraMounts { args += ["-v", mount] }
 
         args.append(ImageBuilder.imageTag(name: name, username: host.username))
         return args

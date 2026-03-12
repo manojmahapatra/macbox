@@ -135,6 +135,60 @@ Commands run inside the container after creation — install packages, clone rep
 - Each distro gets its own managed SSH key, localhost SSH port, and SSH alias.
 - App ports are discovered after startup and forwarded back to your Mac automatically.
 
+## Who It Is For
+
+`macbox` is a good fit for:
+
+- developers who want persistent Linux environments on macOS
+- teams that want reproducible onboarding with a checked-in `macbox.json`
+- backend and service workflows that need Linux userland but easy localhost access
+- people juggling multiple toolchains, distro versions, or project-specific setups
+
+`macbox` is a weaker fit for:
+
+- GUI Linux desktop app workflows
+- strong isolation or sandboxing use cases
+- heavy `systemd` or full-VM expectations
+- projects that already work well with native macOS tooling
+
+## Example Distros
+
+- `webdev`: Node, Python, frontend tooling, and a mounted projects directory
+- `backend`: Go/Rust/Java plus Docker/Compose for multi-service stacks
+- `infra`: Terraform, Ansible, `kubectl`, Helm, and cloud CLIs
+- `db-lab`: PostgreSQL, Redis, ClickHouse, or other local Linux services
+- `compat-ubuntu`: a pinned Ubuntu version for older dependencies
+- `editor`: a Linux coding environment used mainly through VS Code Remote SSH
+
+## When To Use What
+
+| Need | Best fit |
+| --- | --- |
+| A persistent Linux dev box on your Mac | `macbox` |
+| A single app container or disposable runtime | Docker / `container run` |
+| A fuller machine-like environment with stronger isolation | VM |
+| Native macOS tools are already enough | Stay on macOS |
+
+## Isolation Boundaries
+
+`macbox` is designed for developer convenience and workflow isolation, not for strong sandboxing.
+
+What `macbox` is good at:
+
+- keeping Linux toolchains and dependencies out of your macOS host
+- separating projects into distinct persistent distros
+- limiting exposure to localhost services instead of broad network access
+- giving you a more structured boundary than installing everything directly on macOS
+
+What `macbox` is not designed to guarantee:
+
+- strong isolation from untrusted code
+- VM-grade separation from the host
+- desktop-style sandbox policies
+- safe execution of hostile workloads with access to forwarded mounts, SSH agent, or secrets
+
+If you need a stronger security boundary, prefer a VM-oriented setup with reduced host mounts and fewer integrations.
+
 ## Examples
 
 ### Web app dev

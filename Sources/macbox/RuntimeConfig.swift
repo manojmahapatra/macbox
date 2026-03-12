@@ -10,35 +10,27 @@ enum RuntimeConfig {
         extraMounts: [String] = [],
         portForwards: [String] = [],
         cpus: Int? = nil,
-        memory: String? = nil
-    ) -> [String] {
-        var args = [
-            "container", "run",
+        memory: String? = nil,
+        sshHostPort: Int,
+        homeReadWrite: Bool = false
+    ) throws -> [String] {
+        var args = try ContainerCLI.command([
+            "run",
             "--name", name,
-            "--hostname", name,
             "--label", "macbox",
+            "--label", "macbox.ssh-host-port=\(sshHostPort)",
             "-d",
-            "-v", "\(host.home):\(host.home):ro",
-            "-p", "\(ImageBuilder.sshPort):\(ImageBuilder.sshPort)",
-        ]
+            "--mount", bindMount(source: host.home, target: host.home, readOnly: !homeReadWrite),
+            "--publish", "127.0.0.1:\(sshHostPort):\(ImageBuilder.sshPort)",
+        ])
 
         // Resource limits
         if let cpus { args += ["--cpus", "\(cpus)"] }
         if let memory { args += ["--memory", memory] }
 
         // SSH agent forwarding
-        if let sock = host.sshAuthSock {
-            args += ["-v", "\(sock):/run/ssh-agent:ro"]
-            args += ["-e", "SSH_AUTH_SOCK=/run/ssh-agent"]
-        }
-
-        // Inject host's public key for passwordless SSH
-        let pubKeyPath = host.home + "/.ssh/id_ed25519.pub"
-        let rsaPubKeyPath = host.home + "/.ssh/id_rsa.pub"
-        let keyPath = FileManager.default.fileExists(atPath: pubKeyPath) ? pubKeyPath :
-                      FileManager.default.fileExists(atPath: rsaPubKeyPath) ? rsaPubKeyPath : nil
-        if let keyPath {
-            args += ["-v", "\(keyPath):/home/\(host.username)/.ssh/authorized_keys:ro"]
+        if host.sshAuthSock != nil {
+            args.append("--ssh")
         }
 
         // Forward useful host env
@@ -48,16 +40,70 @@ enum RuntimeConfig {
             }
         }
 
-        for pf in portForwards { args += ["-p", pf] }
-        for mount in extraMounts { args += ["-v", mount] }
+        for pf in portForwards { args += ["--publish", pf] }
+        for mount in extraMounts { args += ["--mount", try bindMount(spec: mount)] }
 
         args.append(ImageBuilder.imageTag(name: name, username: host.username))
         return args
     }
 
-    static func execArgs(name: String, host: HostInfo) -> [String] {
-        let shell = host.shell.hasSuffix("zsh") ? "/bin/zsh" :
-                    host.shell.hasSuffix("fish") ? "/usr/bin/fish" : "/bin/bash"
-        return ["container", "exec", "-it", "-u", host.username, name, shell, "-l"]
+    static func execArgs(name: String, host: HostInfo, preferredShell: String? = nil) throws -> [String] {
+        let primaryShell = preferredShell ?? containerShell(from: host.shell)
+        let fallbackScript = [
+            primaryShell,
+            "/bin/zsh",
+            "/usr/bin/fish",
+            "/bin/bash",
+            "/bin/sh",
+        ]
+            .uniqued()
+            .map { "if [ -x \($0) ]; then exec \($0) -l; fi" }
+            .joined(separator: "; ")
+
+        return try ContainerCLI.command(
+            "exec", "-it", "-u", host.username, name,
+            "/bin/sh", "-lc", "\(fallbackScript); exec /bin/sh -l"
+        )
+    }
+
+    static func containerShell(from hostShell: String) -> String {
+        if hostShell.hasSuffix("zsh") { return "/bin/zsh" }
+        if hostShell.hasSuffix("fish") { return "/usr/bin/fish" }
+        return "/bin/bash"
+    }
+
+    private static func bindMount(spec: String) throws -> String {
+        let components = spec.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard components.count == 2 || components.count == 3 else {
+            throw MacboxError.invalidMountSpec(spec)
+        }
+
+        let source = expandPath(components[0])
+        let target = components[1]
+        let readOnly = components.count == 3 && components[2].lowercased() == "ro"
+        return bindMount(source: source, target: target, readOnly: readOnly)
+    }
+
+    private static func bindMount(source: String, target: String, readOnly: Bool) -> String {
+        var pieces = [
+            "type=bind",
+            "source=\(expandPath(source))",
+            "target=\(target)",
+        ]
+        if readOnly {
+            pieces.append("readonly")
+        }
+        return pieces.joined(separator: ",")
+    }
+
+    private static func expandPath(_ path: String) -> String {
+        NSString(string: path).expandingTildeInPath
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

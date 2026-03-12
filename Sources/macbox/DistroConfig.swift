@@ -1,6 +1,6 @@
 import Foundation
 
-/// YAML-like config file for defining a distro. Saved as `macbox.json`.
+/// JSON config file for defining a distro. Saved as `macbox.json`.
 /// Allows sharing/versioning distro definitions.
 struct DistroConfig: Codable, Sendable {
     var image: String

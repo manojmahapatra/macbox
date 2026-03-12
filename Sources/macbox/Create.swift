@@ -30,66 +30,96 @@ struct Create: AsyncParsableCommand {
     @Option(help: "Memory limit (e.g. 4g, 2048m)")
     var memory: String?
 
-    @Flag(help: "Mount home directory read-write instead of read-only")
+    @Flag(name: .customLong("home-rw"), help: "Mount home directory read-write instead of read-only")
     var homeRW: Bool = false
+
+    @Flag(name: .customLong("home-ro"), help: "Force home directory to stay read-only")
+    var homeRO: Bool = false
 
     func run() async throws {
         let host = HostInfo.current()
+        let identity = try await ManagedSSHIdentity.ensure(name: name)
+        let resolvedHomePreference = try resolveHomePreference()
 
-        // Merge config file with CLI flags (CLI wins)
-        var resolvedImage = image
-        var allMounts = mount
-        var allPorts = publish
-        var allProvision = provision
-        var resolvedCpus = cpus
-        var resolvedMemory = memory
-        var resolvedHomeRW = homeRW
+        let cfg = try config.map(DistroConfig.load)
 
-        if let configPath = config {
-            let cfg = try DistroConfig.load(from: configPath)
-            resolvedImage = resolvedImage ?? cfg.image
-            allMounts += cfg.mounts ?? []
-            allPorts += cfg.ports ?? []
-            allProvision += cfg.provision ?? []
-            resolvedCpus = resolvedCpus ?? cfg.cpus
-            resolvedMemory = resolvedMemory ?? cfg.memory
-            resolvedHomeRW = resolvedHomeRW || (cfg.homeRW ?? false)
-        }
+        let resolvedImage = image ?? cfg?.image
+        let allMounts = mount.isEmpty ? (cfg?.mounts ?? []) : mount
+        let allPorts = publish.isEmpty ? (cfg?.ports ?? []) : publish
+        let allProvision = provision.isEmpty ? (cfg?.provision ?? []) : provision
+        let resolvedCpus = cpus ?? cfg?.cpus
+        let resolvedMemory = memory ?? cfg?.memory
+        let resolvedHomeRW = resolvedHomePreference ?? cfg?.homeRW ?? false
 
         guard let finalImage = resolvedImage else {
             throw ValidationError("Image is required (provide as argument or in config file)")
         }
 
+        let existingPorts = Set(DistroStateStore.all().map(\.sshHostPort))
+        let sshHostPort = try PortAllocator.nextAvailableSSHPort(reserved: existingPorts)
+        let imageTag = ImageBuilder.imageTag(name: name, username: host.username)
+
         print("🔨 Building per-user image for '\(name)' from \(finalImage)...")
         try await ImageBuilder.build(name: name, base: finalImage, host: host)
 
         print("🚀 Creating container '\(name)'...")
-        var args = RuntimeConfig.runArgs(
+        let args = try RuntimeConfig.runArgs(
             name: name, host: host,
             extraMounts: allMounts, portForwards: allPorts,
-            cpus: resolvedCpus, memory: resolvedMemory
+            cpus: resolvedCpus, memory: resolvedMemory,
+            sshHostPort: sshHostPort,
+            homeReadWrite: resolvedHomeRW
         )
 
-        if resolvedHomeRW {
-            args = args.map { $0 == "\(host.home):\(host.home):ro" ? "\(host.home):\(host.home):rw" : $0 }
-        }
-
         try await Shell.run(args)
+        try await AuthorizedKeys.sync(name: name, host: host, publicKeyPath: identity.publicKeyPath)
+
+        let state = DistroState(
+            name: name,
+            imageTag: imageTag,
+            baseImage: finalImage,
+            sshHostPort: sshHostPort,
+            sshContainerPort: ImageBuilder.sshPort,
+            shell: RuntimeConfig.containerShell(from: host.shell),
+            sshPrivateKeyPath: identity.privateKeyPath,
+            sshPublicKeyPath: identity.publicKeyPath
+        )
+        try DistroStateStore.save(state)
+        try ManagedSSHConfig.sync(
+            name: name,
+            username: host.username,
+            port: sshHostPort,
+            privateKeyPath: identity.privateKeyPath
+        )
+        try AutoPortForwarding.ensureMonitor(name: name)
 
         // Run provisioning commands inside the container
         if !allProvision.isEmpty {
             print("📦 Running provisioning...")
             for cmd in allProvision {
                 try await Shell.run(
-                    "container", "exec", name,
-                    "bash", "-c", cmd
+                    try ContainerCLI.command(
+                        "exec", name,
+                        "sh", "-lc", cmd
+                    )
                 )
             }
         }
 
         print("✅ Distro '\(name)' ready.")
         print("   Enter:   macbox enter \(name)")
-        print("   SSH:     ssh -p \(ImageBuilder.sshPort) \(host.username)@localhost")
-        print("   VS Code: code --remote ssh-remote+\(host.username)@localhost:\(ImageBuilder.sshPort) /home/\(host.username)")
+        print("   SSH:     ssh -i \(identity.privateKeyPath) -p \(sshHostPort) \(host.username)@localhost")
+        print("   Alias:   ssh -F \(ManagedSSHConfig.configPath()) \(ManagedSSHConfig.hostAlias(for: name))")
+        print("   Ports:   macbox ports \(name)")
+        print("   VS Code: code --remote ssh-remote+\(host.username)@localhost:\(sshHostPort) /home/\(host.username)")
+    }
+
+    private func resolveHomePreference() throws -> Bool? {
+        if homeRW && homeRO {
+            throw ValidationError("Choose either --home-rw or --home-ro, not both")
+        }
+        if homeRW { return true }
+        if homeRO { return false }
+        return nil
     }
 }

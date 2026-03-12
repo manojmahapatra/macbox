@@ -9,24 +9,37 @@ enum ImageBuilder {
     /// Returns the Dockerfile content for a per-user layer on top of `base`.
     static func dockerfile(base: String, host: HostInfo) -> String {
         let shell = linuxShell(from: host.shell)
-        let shellPkg = shell == "/bin/bash" ? "" : shell.split(separator: "/").last.map(String.init) ?? ""
+        let shellPkg = shellPackage(for: shell)
         return """
         FROM \(base)
 
         # Install essentials: sudo, user shell, openssh-server
         RUN if command -v apt-get >/dev/null 2>&1; then \\
-              apt-get update -qq && apt-get install -y -qq sudo openssh-server \(shellPkg) && rm -rf /var/lib/apt/lists/* && mkdir -p /run/sshd; \\
+              apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq sudo openssh-server \(shellPkg) && rm -rf /var/lib/apt/lists/*; \\
             elif command -v apk >/dev/null 2>&1; then \\
-              apk add --no-cache sudo openssh-server \(shellPkg) && ssh-keygen -A; \\
+              apk add --no-cache sudo openssh-server \(shellPkg); \\
             elif command -v dnf >/dev/null 2>&1; then \\
-              dnf install -y sudo openssh-server \(shellPkg) && dnf clean all && ssh-keygen -A; \\
+              dnf install -y sudo openssh-server \(shellPkg) && dnf clean all; \\
+            elif command -v yum >/dev/null 2>&1; then \\
+              yum install -y sudo openssh-server \(shellPkg) && yum clean all; \\
+            else \\
+              echo "Unsupported base image: missing apt-get/apk/dnf/yum" >&2; exit 1; \\
             fi
+        RUN mkdir -p /run/sshd /etc/sudoers.d && ssh-keygen -A
 
         # Create user matching host UID/GID
-        RUN groupadd -g \(host.gid) \(host.username) 2>/dev/null || true && \\
-            useradd -u \(host.uid) -g \(host.gid) -d /home/\(host.username) -s \(shell) -m -N \(host.username) 2>/dev/null || true && \\
+        RUN if command -v useradd >/dev/null 2>&1; then \\
+              groupadd -g \(host.gid) \(host.username) 2>/dev/null || true; \\
+              id -u \(host.username) >/dev/null 2>&1 || useradd -u \(host.uid) -g \(host.gid) -d /home/\(host.username) -s \(shell) -m -N \(host.username); \\
+            elif command -v addgroup >/dev/null 2>&1 && command -v adduser >/dev/null 2>&1; then \\
+              addgroup -g \(host.gid) \(host.username) 2>/dev/null || true; \\
+              id -u \(host.username) >/dev/null 2>&1 || adduser -D -h /home/\(host.username) -s \(shell) -G \(host.username) -u \(host.uid) \(host.username); \\
+            else \\
+              echo "No supported user creation tools in base image" >&2; exit 1; \\
+            fi && \\
             echo '\(host.username) ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/\(host.username) && \\
-            mkdir -p /home/\(host.username)/.ssh && chown \(host.uid):\(host.gid) /home/\(host.username)/.ssh && chmod 700 /home/\(host.username)/.ssh
+            chmod 0440 /etc/sudoers.d/\(host.username) && \\
+            mkdir -p /home/\(host.username)/.ssh && touch /home/\(host.username)/.zshrc && chown -R \(host.uid):\(host.gid) /home/\(host.username) && chmod 700 /home/\(host.username)/.ssh
 
         # Configure sshd: key-only auth on port \(sshPort)
         RUN sed -i 's/#Port 22/Port \(sshPort)/' /etc/ssh/sshd_config 2>/dev/null; \\
@@ -54,7 +67,7 @@ enum ImageBuilder {
         let dockerfilePath = tmpDir.appendingPathComponent("Dockerfile")
         try dockerfile(base: base, host: host).write(to: dockerfilePath, atomically: true, encoding: .utf8)
 
-        try await Shell.run("container", "build", "--tag", tag, tmpDir.path())
+        try await Shell.run(try ContainerCLI.command("build", "--tag", tag, tmpDir.path()))
     }
 
     static func imageTag(name: String, username: String) -> String {
@@ -65,5 +78,11 @@ enum ImageBuilder {
         if macShell.hasSuffix("zsh") { return "/bin/zsh" }
         if macShell.hasSuffix("fish") { return "/usr/bin/fish" }
         return "/bin/bash"
+    }
+
+    private static func shellPackage(for shell: String) -> String {
+        if shell.hasSuffix("zsh") { return "zsh" }
+        if shell.hasSuffix("fish") { return "fish" }
+        return "bash"
     }
 }

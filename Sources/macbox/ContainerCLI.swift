@@ -8,11 +8,19 @@ enum ContainerCLI {
         try command(args)
     }
 
-    static func command(_ args: [String]) throws -> [String] {
-        [try executable()] + args
+    static func command(_ args: [String], executable explicitExecutable: String? = nil) throws -> [String] {
+        [try executable(explicit: explicitExecutable)] + args
     }
 
     static func executable() throws -> String {
+        try executable(explicit: nil)
+    }
+
+    private static func executable(explicit explicitExecutable: String?) throws -> String {
+        if let explicitExecutable, !explicitExecutable.isEmpty {
+            return explicitExecutable
+        }
+
         if let override = ProcessInfo.processInfo.environment[envKey], !override.isEmpty {
             return override
         }

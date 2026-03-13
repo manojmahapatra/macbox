@@ -70,12 +70,10 @@ import Foundation
 }
 
 @Suite struct RuntimeConfigTests {
-    @Test func runArgsIncludeDistinctSSHPortAndLoopbackBinding() {
+    @Test func runArgsIncludeDistinctSSHPortAndLoopbackBinding() throws {
         let host = HostInfo(username: "testuser", uid: 501, gid: 20, home: "/Users/testuser", shell: "/bin/zsh", sshAuthSock: "/tmp/agent.sock")
-        setenv("MACBOX_CONTAINER_BIN", "/usr/bin/env", 1)
-        defer { unsetenv("MACBOX_CONTAINER_BIN") }
 
-        let args = try! RuntimeConfig.runArgs(
+        let args = try RuntimeConfig.runArgs(
             name: "mydev",
             host: host,
             extraMounts: ["/tmp/data:/work:ro"],
@@ -83,7 +81,8 @@ import Foundation
             cpus: 4,
             memory: "4g",
             sshHostPort: 43022,
-            homeReadWrite: false
+            homeReadWrite: false,
+            containerExecutable: "/usr/bin/env"
         )
 
         #expect(args.first == "/usr/bin/env")
@@ -96,10 +95,13 @@ import Foundation
 
     @Test func execArgsUseFallbackShellChain() throws {
         let host = HostInfo(username: "testuser", uid: 501, gid: 20, home: "/Users/testuser", shell: "/bin/zsh", sshAuthSock: nil)
-        setenv("MACBOX_CONTAINER_BIN", "/usr/bin/env", 1)
-        defer { unsetenv("MACBOX_CONTAINER_BIN") }
 
-        let args = try RuntimeConfig.execArgs(name: "devbox", host: host, preferredShell: "/usr/bin/fish")
+        let args = try RuntimeConfig.execArgs(
+            name: "devbox",
+            host: host,
+            preferredShell: "/usr/bin/fish",
+            containerExecutable: "/usr/bin/env"
+        )
 
         #expect(args[0] == "/usr/bin/env")
         #expect(args.contains("/bin/sh"))

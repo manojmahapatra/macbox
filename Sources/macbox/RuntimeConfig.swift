@@ -12,7 +12,8 @@ enum RuntimeConfig {
         cpus: Int? = nil,
         memory: String? = nil,
         sshHostPort: Int,
-        homeReadWrite: Bool = false
+        homeReadWrite: Bool = false,
+        containerExecutable: String? = nil
     ) throws -> [String] {
         var args = try ContainerCLI.command([
             "run",
@@ -22,7 +23,7 @@ enum RuntimeConfig {
             "-d",
             "--mount", bindMount(source: host.home, target: host.home, readOnly: !homeReadWrite),
             "--publish", "127.0.0.1:\(sshHostPort):\(ImageBuilder.sshPort)",
-        ])
+        ], executable: containerExecutable)
 
         // Resource limits
         if let cpus { args += ["--cpus", "\(cpus)"] }
@@ -47,7 +48,12 @@ enum RuntimeConfig {
         return args
     }
 
-    static func execArgs(name: String, host: HostInfo, preferredShell: String? = nil) throws -> [String] {
+    static func execArgs(
+        name: String,
+        host: HostInfo,
+        preferredShell: String? = nil,
+        containerExecutable: String? = nil
+    ) throws -> [String] {
         let primaryShell = preferredShell ?? containerShell(from: host.shell)
         let fallbackScript = [
             primaryShell,
@@ -60,10 +66,10 @@ enum RuntimeConfig {
             .map { "if [ -x \($0) ]; then exec \($0) -l; fi" }
             .joined(separator: "; ")
 
-        return try ContainerCLI.command(
+        return try ContainerCLI.command([
             "exec", "-it", "-u", host.username, name,
             "/bin/sh", "-lc", "\(fallbackScript); exec /bin/sh -l"
-        )
+        ], executable: containerExecutable)
     }
 
     static func containerShell(from hostShell: String) -> String {

@@ -79,6 +79,10 @@ macbox remove <name> [--force]    Remove distro and image
 macbox init [-o path]             Generate sample config
 ```
 
+Detailed command docs:
+
+- [`macbox create`](docs/usage/macbox-create.md)
+
 ## Support Matrix
 
 The table below shows what `macbox` supports today and what we plan to add next.

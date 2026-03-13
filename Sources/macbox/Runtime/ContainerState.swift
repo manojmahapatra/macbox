@@ -1,5 +1,6 @@
 import Foundation
 
+/// Minimal subset of `container inspect` output needed by `macbox`.
 struct ContainerState: Decodable, Sendable {
     struct Configuration: Decodable, Sendable {
         struct Image: Decodable, Sendable {
@@ -14,7 +15,9 @@ struct ContainerState: Decodable, Sendable {
     let configuration: Configuration
 }
 
+/// Reads live container state from the Apple `container` CLI.
 enum ContainerStateReader {
+    /// Inspects a single distro container and normalizes missing-container errors.
     static func inspect(name: String) async throws -> ContainerState {
         do {
             let output = try await Shell.run(try ContainerCLI.command("inspect", name), quiet: true)

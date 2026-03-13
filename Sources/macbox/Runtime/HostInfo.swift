@@ -10,6 +10,7 @@ struct HostInfo: Sendable {
     let shell: String
     let sshAuthSock: String?
 
+    /// Captures the current macOS user, home directory, shell, and SSH agent socket.
     static func current() -> HostInfo {
         HostInfo(
             username: NSUserName(),

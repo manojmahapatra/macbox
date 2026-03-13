@@ -1,17 +1,21 @@
 import ArgumentParser
 import Foundation
 
+/// Resolves and constructs invocations of Apple’s `container` CLI.
 enum ContainerCLI {
     private static let envKey = "MACBOX_CONTAINER_BIN"
 
+    /// Prepends the resolved `container` executable to a variadic argument list.
     static func command(_ args: String...) throws -> [String] {
         try command(args)
     }
 
+    /// Prepends the resolved `container` executable to a complete argument array.
     static func command(_ args: [String], executable explicitExecutable: String? = nil) throws -> [String] {
         [try executable(explicit: explicitExecutable)] + args
     }
 
+    /// Returns the executable path for Apple’s `container` CLI.
     static func executable() throws -> String {
         try executable(explicit: nil)
     }
@@ -37,6 +41,7 @@ enum ContainerCLI {
         )
     }
 
+    /// Returns `true` when the `container` CLI can be resolved locally.
     static func isAvailable() -> Bool {
         (try? executable()) != nil
     }

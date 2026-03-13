@@ -1,10 +1,12 @@
 import Foundation
 
+/// Represents the SSH keypair `macbox` manages for a single distro.
 struct ManagedSSHIdentity: Sendable, Equatable {
     let name: String
     let privateKeyPath: String
     let publicKeyPath: String
 
+    /// Creates the keypair for a distro if needed and returns its paths.
     static func ensure(name: String) async throws -> ManagedSSHIdentity {
         let directory = storageDirectory().appendingPathComponent(name, isDirectory: true)
         let privateKey = directory.appendingPathComponent("id_ed25519")
@@ -32,6 +34,7 @@ struct ManagedSSHIdentity: Sendable, Equatable {
         )
     }
 
+    /// Deletes the managed SSH keypair directory for a distro.
     static func delete(name: String) throws {
         let directory = storageDirectory().appendingPathComponent(name, isDirectory: true)
         guard FileManager.default.fileExists(atPath: directory.path) else { return }

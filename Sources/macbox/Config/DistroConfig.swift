@@ -11,11 +11,13 @@ struct DistroConfig: Codable, Sendable {
     var cpus: Int?
     var memory: String?       // e.g. "4g", "2048m"
 
+    /// Loads a distro configuration from a JSON file on disk.
     static func load(from path: String) throws -> DistroConfig {
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         return try JSONDecoder().decode(DistroConfig.self, from: data)
     }
 
+    /// Writes the configuration to a JSON file using a stable, readable format.
     func save(to path: String) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

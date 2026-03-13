@@ -1,11 +1,13 @@
 import ArgumentParser
 import Foundation
 
+/// Lists known distros along with runtime status and forwarded ports.
 struct List: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "List macbox distros."
     )
 
+    /// Reads persisted state and inspects live containers to render the distro table.
     func run() async throws {
         let states = DistroStateStore.all().sorted { $0.name < $1.name }
         guard !states.isEmpty else {

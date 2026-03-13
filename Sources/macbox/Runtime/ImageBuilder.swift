@@ -57,7 +57,7 @@ enum ImageBuilder {
         """
     }
 
-    /// Build the per-user image using `container build`.
+    /// Builds the per-user image using `container build`.
     static func build(name: String, base: String, host: HostInfo) async throws {
         let tag = imageTag(name: name, username: host.username)
         let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("macbox-\(name)")
@@ -70,6 +70,7 @@ enum ImageBuilder {
         try await Shell.run(try ContainerCLI.command("build", "--tag", tag, tmpDir.path()))
     }
 
+    /// Returns the local image tag used for a distro’s baked user image.
     static func imageTag(name: String, username: String) -> String {
         "macbox-\(name)-\(username):latest"
     }

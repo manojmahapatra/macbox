@@ -4,6 +4,7 @@ import Foundation
 /// This is the "runtime injection" half of the hybrid approach.
 enum RuntimeConfig {
 
+    /// Builds the `container run` arguments that apply host integration at startup.
     static func runArgs(
         name: String,
         host: HostInfo,
@@ -48,6 +49,7 @@ enum RuntimeConfig {
         return args
     }
 
+    /// Builds the `container exec` arguments used for an interactive shell session.
     static func execArgs(
         name: String,
         host: HostInfo,
@@ -72,6 +74,7 @@ enum RuntimeConfig {
         ], executable: containerExecutable)
     }
 
+    /// Maps the host login shell to a Linux shell path likely to exist in the distro.
     static func containerShell(from hostShell: String) -> String {
         if hostShell.hasSuffix("zsh") { return "/bin/zsh" }
         if hostShell.hasSuffix("fish") { return "/usr/bin/fish" }

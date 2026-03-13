@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 
+/// Creates a new distro, provisions its runtime integration, and persists local metadata.
 struct Create: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Create a new distro from a container image or config file."
@@ -36,6 +37,7 @@ struct Create: AsyncParsableCommand {
     @Flag(name: .customLong("home-ro"), help: "Force home directory to stay read-only")
     var homeRO: Bool = false
 
+    /// Builds the per-user image, starts the distro, and wires up SSH and port state.
     func run() async throws {
         let host = HostInfo.current()
         let identity = try await ManagedSSHIdentity.ensure(name: name)
@@ -114,6 +116,7 @@ struct Create: AsyncParsableCommand {
         print("   VS Code: code --remote ssh-remote+\(host.username)@localhost:\(sshHostPort) /home/\(host.username)")
     }
 
+    /// Resolves mutually exclusive home mount flags into a single read/write preference.
     private func resolveHomePreference() throws -> Bool? {
         if homeRW && homeRO {
             throw ValidationError("Choose either --home-rw or --home-ro, not both")

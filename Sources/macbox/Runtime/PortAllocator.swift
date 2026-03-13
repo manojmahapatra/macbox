@@ -1,7 +1,9 @@
 import Darwin
 import Foundation
 
+/// Allocates localhost ports while avoiding collisions with active distros.
 enum PortAllocator {
+    /// Finds a unique host port to use for distro SSH access.
     static func nextAvailableSSHPort(reserved: Set<Int>) throws -> Int {
         for _ in 0..<32 {
             let port = try ephemeralPort()
@@ -13,6 +15,7 @@ enum PortAllocator {
         throw MacboxError.portAllocationFailed
     }
 
+    /// Uses the requested host port when possible, otherwise falls back to an ephemeral one.
     static func preferredOrEphemeral(preferred: Int, reserved: Set<Int>) throws -> Int {
         if !reserved.contains(preferred), isAvailable(port: preferred) {
             return preferred

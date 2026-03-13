@@ -1,6 +1,8 @@
 import Foundation
 
+/// Synchronizes a distro’s `authorized_keys` file with its managed SSH identity.
 enum AuthorizedKeys {
+    /// Installs the managed public key into the distro user’s `authorized_keys` file.
     static func sync(name: String, host: HostInfo, publicKeyPath: String) async throws {
         let source = shellQuote(publicKeyPath)
         let target = shellQuote("/home/\(host.username)/.ssh/authorized_keys")

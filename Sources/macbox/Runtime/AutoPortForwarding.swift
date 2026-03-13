@@ -1,77 +1,12 @@
-import ArgumentParser
 import Darwin
 import Foundation
 
-struct ForwardedPort: Codable, Sendable, Equatable {
-    let containerPort: Int
-    let hostPort: Int
-    let pid: Int32
-}
-
-struct AutoPortForwardState: Codable, Sendable, Equatable {
-    let name: String
-    var monitorPID: Int32?
-    var forwards: [ForwardedPort]
-}
-
-enum AutoPortForwardStore {
-    static func load(name: String) throws -> AutoPortForwardState? {
-        let url = stateURL(for: name)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(AutoPortForwardState.self, from: data)
-    }
-
-    static func save(_ state: AutoPortForwardState) throws {
-        let fm = FileManager.default
-        let directory = storageDirectory()
-        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(state)
-        try data.write(to: stateURL(for: state.name), options: .atomic)
-    }
-
-    static func delete(name: String) throws {
-        let url = stateURL(for: name)
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        try FileManager.default.removeItem(at: url)
-    }
-
-    static func all() -> [AutoPortForwardState] {
-        let fm = FileManager.default
-        guard let contents = try? fm.contentsOfDirectory(
-            at: storageDirectory(),
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        return contents.compactMap { url in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? JSONDecoder().decode(AutoPortForwardState.self, from: data)
-        }
-    }
-
-    private static func storageDirectory() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("macbox", isDirectory: true)
-            .appendingPathComponent("ports", isDirectory: true)
-    }
-
-    private static func stateURL(for name: String) -> URL {
-        storageDirectory().appendingPathComponent("\(name).json")
-    }
-}
-
+/// Keeps localhost TCP forwards in sync with the ports a distro is listening on.
 enum AutoPortForwarding {
     static let syncIntervalSeconds: UInt32 = 3
     private static let reservedPorts: Set<Int> = [ImageBuilder.sshPort]
 
+    /// Starts the hidden port monitor for a distro if one is not already running.
     static func ensureMonitor(name: String) throws {
         var state = (try AutoPortForwardStore.load(name: name)) ?? AutoPortForwardState(name: name, monitorPID: nil, forwards: [])
         if let pid = state.monitorPID, isProcessAlive(pid) {
@@ -93,6 +28,7 @@ enum AutoPortForwarding {
         try AutoPortForwardStore.save(state)
     }
 
+    /// Stops the port monitor and any active SSH forwarders for a distro.
     static func stop(name: String) {
         let state = try? AutoPortForwardStore.load(name: name)
         state?.forwards.forEach { stopForwarder(pid: $0.pid) }
@@ -102,6 +38,7 @@ enum AutoPortForwarding {
         try? AutoPortForwardStore.delete(name: name)
     }
 
+    /// Reads listening TCP ports from the running distro.
     static func discoverPorts(name: String) async throws -> [Int] {
         let output = try await Shell.run(
             try ContainerCLI.command("exec", name, "sh", "-lc", "cat /proc/net/tcp /proc/net/tcp6"),
@@ -114,6 +51,7 @@ enum AutoPortForwarding {
         return Array(Set(ports)).sorted()
     }
 
+    /// Reconciles active SSH tunnels with the ports currently listening in the distro.
     static func syncOnce(name: String) async throws {
         let host = HostInfo.current()
         let distro = try DistroStateStore.load(name: name) ?? DistroState.legacy(name: name, host: host)
@@ -237,58 +175,5 @@ enum AutoPortForwarding {
         let address = parts[1].split(separator: ":")
         guard address.count == 2 else { return nil }
         return Int(address[1], radix: 16)
-    }
-}
-
-struct Ports: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        abstract: "Show automatically forwarded app ports for a distro."
-    )
-
-    @Argument(help: "Distro name")
-    var name: String
-
-    func run() async throws {
-        let state = try AutoPortForwardStore.load(name: name) ?? AutoPortForwardState(name: name, monitorPID: nil, forwards: [])
-        if state.forwards.isEmpty {
-            print("No auto-forwarded app ports for '\(name)'.")
-            return
-        }
-
-        print("HOST  CONTAINER")
-        for forward in state.forwards.sorted(by: { $0.hostPort < $1.hostPort }) {
-            print("\(forward.hostPort)  \(forward.containerPort)")
-        }
-    }
-}
-
-struct PortSync: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "port-sync",
-        abstract: "Internal background port sync loop.",
-        shouldDisplay: false
-    )
-
-    @Argument(help: "Distro name")
-    var name: String
-
-    func run() async throws {
-        while true {
-            do {
-                let host = HostInfo.current()
-                let container = try await ContainerStateReader.inspect(name: name)
-                guard container.status == "running" else {
-                    AutoPortForwarding.stop(name: name)
-                    return
-                }
-                _ = try DistroStateStore.load(name: name) ?? DistroState.legacy(name: name, host: host)
-                try await AutoPortForwarding.syncOnce(name: name)
-            } catch {
-                AutoPortForwarding.stop(name: name)
-                return
-            }
-
-            sleep(AutoPortForwarding.syncIntervalSeconds)
-        }
     }
 }

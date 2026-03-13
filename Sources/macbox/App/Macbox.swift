@@ -1,5 +1,6 @@
 import ArgumentParser
 
+/// Root command for managing persistent Linux distros on macOS.
 @main
 struct Macbox: AsyncParsableCommand {
     static let configuration = CommandConfiguration(

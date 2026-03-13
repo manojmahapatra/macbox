@@ -1,5 +1,6 @@
 import ArgumentParser
 
+/// Opens an interactive session in a distro via `container exec` or SSH.
 struct Enter: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Enter a running distro (starts it if stopped)."
@@ -11,6 +12,7 @@ struct Enter: AsyncParsableCommand {
     @Flag(help: "Connect via SSH instead of container exec")
     var ssh: Bool = false
 
+    /// Ensures the distro is running and connects using the requested access mode.
     func run() async throws {
         let host = HostInfo.current()
         var state = try DistroStateStore.load(name: name) ?? DistroState.legacy(name: name, host: host)

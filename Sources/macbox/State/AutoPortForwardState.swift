@@ -1,39 +1,31 @@
 import Foundation
 
-struct DistroState: Codable, Sendable, Equatable {
-    let name: String
-    let imageTag: String
-    let baseImage: String
-    let sshHostPort: Int
-    let sshContainerPort: Int
-    let shell: String
-    let sshPrivateKeyPath: String?
-    let sshPublicKeyPath: String?
-
-    static func legacy(name: String, host: HostInfo) -> DistroState {
-        DistroState(
-            name: name,
-            imageTag: ImageBuilder.imageTag(name: name, username: host.username),
-            baseImage: "",
-            sshHostPort: ImageBuilder.sshPort,
-            sshContainerPort: ImageBuilder.sshPort,
-            shell: RuntimeConfig.containerShell(from: host.shell),
-            sshPrivateKeyPath: nil,
-            sshPublicKeyPath: nil
-        )
-    }
+/// Records a single host-to-distro TCP forward managed by `macbox`.
+struct ForwardedPort: Codable, Sendable, Equatable {
+    let containerPort: Int
+    let hostPort: Int
+    let pid: Int32
 }
 
-enum DistroStateStore {
-    static func load(name: String) throws -> DistroState? {
-        let fm = FileManager.default
+/// Persisted auto-forwarding state for a distro, including the monitor process.
+struct AutoPortForwardState: Codable, Sendable, Equatable {
+    let name: String
+    var monitorPID: Int32?
+    var forwards: [ForwardedPort]
+}
+
+/// Stores per-distro port-forward metadata under Application Support.
+enum AutoPortForwardStore {
+    /// Loads previously saved port-forward state for a distro.
+    static func load(name: String) throws -> AutoPortForwardState? {
         let url = stateURL(for: name)
-        guard fm.fileExists(atPath: url.path) else { return nil }
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(DistroState.self, from: data)
+        return try JSONDecoder().decode(AutoPortForwardState.self, from: data)
     }
 
-    static func save(_ state: DistroState) throws {
+    /// Saves the current port-forward state for a distro.
+    static func save(_ state: AutoPortForwardState) throws {
         let fm = FileManager.default
         let directory = storageDirectory()
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -44,14 +36,15 @@ enum DistroStateStore {
         try data.write(to: stateURL(for: state.name), options: .atomic)
     }
 
+    /// Removes saved port-forward state for a distro.
     static func delete(name: String) throws {
-        let fm = FileManager.default
         let url = stateURL(for: name)
-        guard fm.fileExists(atPath: url.path) else { return }
-        try fm.removeItem(at: url)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
     }
 
-    static func all() -> [DistroState] {
+    /// Returns all saved port-forward states.
+    static func all() -> [AutoPortForwardState] {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(
             at: storageDirectory(),
@@ -63,7 +56,7 @@ enum DistroStateStore {
 
         return contents.compactMap { url in
             guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? JSONDecoder().decode(DistroState.self, from: data)
+            return try? JSONDecoder().decode(AutoPortForwardState.self, from: data)
         }
     }
 
@@ -72,7 +65,7 @@ enum DistroStateStore {
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Application Support", isDirectory: true)
             .appendingPathComponent("macbox", isDirectory: true)
-            .appendingPathComponent("distros", isDirectory: true)
+            .appendingPathComponent("ports", isDirectory: true)
     }
 
     private static func stateURL(for name: String) -> URL {

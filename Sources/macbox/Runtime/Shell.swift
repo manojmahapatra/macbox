@@ -3,11 +3,13 @@ import Foundation
 /// Thin wrapper around Process for running shell commands.
 enum Shell {
 
+    /// Runs a command and returns its trimmed stdout.
     @discardableResult
     static func run(_ args: String..., quiet: Bool = false) async throws -> String {
         try await run(args, quiet: quiet)
     }
 
+    /// Runs a command, optionally suppressing streamed output, and returns its trimmed stdout.
     @discardableResult
     static func run(_ args: [String], quiet: Bool = false) async throws -> String {
         let process = Process()
@@ -46,7 +48,7 @@ enum Shell {
         return output
     }
 
-    /// Run interactively (inherits stdin/stdout/stderr).
+    /// Runs a command interactively, inheriting the current terminal streams.
     static func exec(_ args: [String]) async throws {
         let process = Process()
         guard let executable = args.first else {
@@ -67,6 +69,7 @@ enum Shell {
     }
 }
 
+/// User-facing errors emitted by the CLI.
 enum MacboxError: Error, CustomStringConvertible {
     case commandFailed(String, Int32, String)
     case distroNotFound(String)

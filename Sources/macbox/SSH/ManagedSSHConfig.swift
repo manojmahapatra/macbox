@@ -1,6 +1,8 @@
 import Foundation
 
+/// Generates SSH config fragments for the managed per-distro identities.
 enum ManagedSSHConfig {
+    /// Writes or updates the SSH config fragment for a distro and refreshes the aggregate config.
     static func sync(name: String, username: String, port: Int, privateKeyPath: String) throws {
         let fm = FileManager.default
         let directory = fragmentsDirectory()
@@ -18,6 +20,7 @@ enum ManagedSSHConfig {
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
     }
 
+    /// Deletes the SSH config fragment for a distro and refreshes the aggregate config.
     static func delete(name: String) throws {
         let fm = FileManager.default
         let fragment = fragmentURL(for: name)
@@ -32,18 +35,22 @@ enum ManagedSSHConfig {
         }
     }
 
+    /// Returns the stable SSH alias for a distro.
     static func hostAlias(for name: String) -> String {
         "macbox-\(name)"
     }
 
+    /// Returns the path to the generated aggregate SSH config.
     static func configPath() -> String {
         configURL().path
     }
 
+    /// Returns the path to the generated SSH config fragment for a distro.
     static func fragmentPath(for name: String) -> String {
         fragmentURL(for: name).path
     }
 
+    /// Renders a single SSH config fragment for one distro alias.
     static func renderFragment(name: String, username: String, port: Int, privateKeyPath: String) -> String {
         """
         Host \(hostAlias(for: name))

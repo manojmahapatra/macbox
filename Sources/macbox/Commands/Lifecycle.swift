@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 
+/// Removes a distro, its image, and all local `macbox` metadata.
 struct Remove: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Remove a distro and its image."
@@ -12,6 +13,7 @@ struct Remove: AsyncParsableCommand {
     @Flag(help: "Force remove even if running")
     var force: Bool = false
 
+    /// Tears down the container, image, managed SSH assets, and saved state.
     func run() async throws {
         let forceFlag = force ? ["-f"] : []
         AutoPortForwarding.stop(name: name)
@@ -36,6 +38,7 @@ struct Remove: AsyncParsableCommand {
     }
 }
 
+/// Stops a running distro without deleting its image or saved metadata.
 struct Stop: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Stop a running distro."
@@ -44,6 +47,7 @@ struct Stop: AsyncParsableCommand {
     @Argument(help: "Distro name")
     var name: String
 
+    /// Stops the distro and any background port forwarders.
     func run() async throws {
         AutoPortForwarding.stop(name: name)
         print("⏹ Stopping '\(name)'...")
